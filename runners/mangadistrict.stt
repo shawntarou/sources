@@ -110,8 +110,7 @@ class MangaDistrictSource extends tachiyomi_1.TachiParsedHttpSource {
         const { data: html } = await this.client.get(`${this.baseUrl}/title/${slug}/`);
         const $ = (0, cheerio_1.load)(html);
         return $(this.chapterListSelector())
-            .toArray()
-            .reverse() // Reverse the array so chapters are in ascending order (oldest first)
+            .toArray() // Reverse the array so chapters are in ascending order (oldest first)
             .map((el, idx) => this.generateChapter(this.chapterFromElement($(el)), idx, ""));
     }
     parseIdFromUrl(url) {
