@@ -91,86 +91,55 @@ class MangaDistrictSource extends tachiyomi_1.TachiParsedHttpSource {
     lang = "en";
     supportsLatest = true;
     chapterListSelector() {
-        // Robust selector: matches all chapter lists regardless of extra classes
         return "ul.main.version-chap li.wp-manga-chapter";
     }
     chapterFromElement(el) {
-        const chapterLink = el.find("a");
-        const title = chapterLink.text().trim();
-        const url = chapterLink.attr("href") || "";
-        // Try to extract chapter number from the URL or title
-        const chapterMatch = url.match(/chapter-(\d+(\.\d+)?)/i) || title.match(/Chapter\s+(\d+(\.\d+)?)/i);
-        const number = chapterMatch ? parseFloat(chapterMatch[1]) : 0;
-        // Extract date from the <i> tag or from the 'title' attribute if present
-        let dateStr = el.find(".chapter-release-date i").text().trim() ||
-            el.find(".chapter-release-date a").attr("title")?.trim() ||
-            "";
-        let date = new Date();
-        if (dateStr) {
-            const parsed = Date.parse(dateStr);
-            if (!isNaN(parsed)) {
-                date = new Date(parsed);
-            }
-        }
-        return this.generateChapter({
-            chapterId: url,
-            title,
-            number,
-            date,
-        }, 0, "");
+        const link = el.find("a");
+        const title = link.text().trim();
+        const chapterId = link.attr("href") || "";
+        let number = 0;
+        const match = title.match(/chapter\s*([\d.]+)/i) || chapterId.match(/chapter[\/\- ]?([\d.]+)/i);
+        if (match)
+            number = parseFloat(match[1]);
+        const dateStr = el.find(".chapter-release-date i").text().trim() ||
+            el.find(".chapter-release-date a").attr("title")?.trim() || "";
+        const date = isNaN(Date.parse(dateStr)) ? new Date() : new Date(dateStr);
+        return { chapterId, title, number, date };
+    }
+    async getMangaChapters(slug) {
+        const { data: html } = await this.client.get(`${this.baseUrl}/title/${slug}/`);
+        const $ = (0, cheerio_1.load)(html);
+        return $(this.chapterListSelector())
+            .toArray()
+            .reverse() // Reverse the array so chapters are in ascending order (oldest first)
+            .map((el, idx) => this.generateChapter(this.chapterFromElement($(el)), idx, ""));
     }
     parseIdFromUrl(url) {
-        // Extracts the slug from /title/{slug}/
         return url.split("/title/")[1]?.split("/")[0] ?? "";
     }
     parseHighlight(el) {
         const link = el.find("a").first();
-        const mangaUrl = link.attr("href") ?? "";
-        const id = this.parseIdFromUrl(mangaUrl);
+        const id = this.parseIdFromUrl(link.attr("href") ?? "");
         const title = link.attr("title") || link.text().trim();
         const cover = link.find("img").attr("src") ?? "";
-        // Extract additional info if needed
-        const altNames = el.find(".mg_alternative .summary-content").text().trim();
-        const authors = el.find(".mg_author .summary-content a").toArray().map(e => el.constructor.prototype.constructor(e).text().trim());
-        const artists = el.find(".mg_artists .summary-content a").toArray().map(e => el.constructor.prototype.constructor(e).text().trim());
-        const genres = el.find(".mg_genres .summary-content a").toArray().map(e => el.constructor.prototype.constructor(e).text().trim());
-        const status = el.find(".mg_status .summary-content").text().trim();
-        const release = el.find(".mg_release .summary-content").text().trim();
-        return {
-            id,
-            title,
-            cover,
-            altNames,
-            authors,
-            artists,
-            genres,
-            status,
-            release,
-        }; // Adjust Highlight type if needed
+        return { id, title, cover };
     }
-    parseHighlightsFromDocument($) {
-        // For search and directory pages
-        return $(".page-item-detail.manga")
-            .toArray()
-            .map((el) => this.parseHighlight($(el)));
+    parseHighlightList($) {
+        return $(".page-item-detail.manga").toArray().map(el => this.parseHighlight($(el)));
     }
-    async fetchHighlightsFromPages(path, maxPages = 3) {
-        const highlights = [];
+    async fetchHighlights(path, maxPages = 3) {
+        const results = [];
         for (let page = 1; page <= maxPages; page++) {
-            const url = `${this.baseUrl}/${path}/page/${page}/`;
-            const { data: html } = await this.client.get(url);
-            const $ = (0, cheerio_1.load)(html);
-            highlights.push(...this.parseHighlightsFromDocument($));
+            const { data: html } = await this.client.get(`${this.baseUrl}/${path}/page/${page}/`);
+            results.push(...this.parseHighlightList((0, cheerio_1.load)(html)));
         }
-        return highlights;
-    }
-    async popularMangaFetchAll() {
-        // Adjust path as needed for popular manga
-        return this.fetchHighlightsFromPages("popular");
+        return results;
     }
     async latestUpdatesFetchAll() {
-        // Adjust path as needed for latest updates
-        return this.fetchHighlightsFromPages("");
+        return this.fetchHighlights("");
+    }
+    async popularMangaFetchAll() {
+        return this.fetchHighlights("popular");
     }
     searchMangaRequest(request) {
         const page = request.page ?? 1;
@@ -180,58 +149,28 @@ class MangaDistrictSource extends tachiyomi_1.TachiParsedHttpSource {
             params: {
                 s: query,
                 post_type: "wp-manga",
-                op: "",
-                author: "",
-                artist: "",
-                release: "",
-                adult: "",
-                page: page,
+                page,
             },
         };
     }
     searchMangaSelector() {
-        // Use the correct selector for search results
         return ".row.c-tabs-item__content";
     }
-    searchMangaFromElement(el) {
-        // Extract info from the search result structure
-        const link = el.find(".tab-thumb a").first();
-        const mangaUrl = link.attr("href") ?? "";
-        const id = this.parseIdFromUrl(mangaUrl);
-        const title = link.attr("title") || link.find("img").attr("alt") || link.text().trim();
-        const cover = link.find("img").attr("src") ?? "";
-        const altNames = el.find(".mg_alternative .summary-content").text().trim();
-        const authors = el.find(".mg_author .summary-content a").toArray().map(e => el.constructor.prototype.constructor(e).text().trim());
-        const artists = el.find(".mg_artists .summary-content a").toArray().map(e => el.constructor.prototype.constructor(e).text().trim());
-        const genres = el.find(".mg_genres .summary-content a").toArray().map(e => el.constructor.prototype.constructor(e).text().trim());
-        const status = el.find(".mg_status .summary-content").text().trim();
-        const release = el.find(".mg_release .summary-content").text().trim();
-        return {
-            id,
-            title,
-            cover,
-            altNames,
-            authors,
-            artists,
-            genres,
-            status,
-            release,
-        };
-    }
     searchMangaNextPageSelector() {
-        // Selects the next numbered page or the "next" button if present
         return ".wp-pagenavi a.page.larger, .wp-pagenavi a[rel='next']";
     }
-    searchMangaParse(document) {
-        const $ = document;
-        return $(this.searchMangaSelector())
-            .toArray()
-            .map((el) => this.searchMangaFromElement($(el)));
+    searchMangaFromElement(el) {
+        const link = el.find(".tab-thumb a").first();
+        const id = this.parseIdFromUrl(link.attr("href") ?? "");
+        const title = link.attr("title") || link.find("img").attr("alt") || link.text().trim();
+        const cover = link.find("img").attr("src") ?? "";
+        return { id, title, cover };
+    }
+    searchMangaParse($) {
+        return $(this.searchMangaSelector()).toArray().map(el => this.searchMangaFromElement($(el)));
     }
     popularMangaRequest(page) {
-        return {
-            url: `${this.baseUrl}/all-time-views/page/${page}/`,
-        };
+        return { url: `${this.baseUrl}/all-time-views/page/${page}/` };
     }
     popularMangaSelector() {
         return ".page-item-detail.manga";
@@ -240,13 +179,10 @@ class MangaDistrictSource extends tachiyomi_1.TachiParsedHttpSource {
         return this.parseHighlight(el);
     }
     popularMangaNextPageSelector() {
-        // Same logic as search for consistency
-        return ".wp-pagenavi a.page.larger, .wp-pagenavi a[rel='next']";
+        return this.searchMangaNextPageSelector();
     }
     latestUpdatesRequest(page) {
-        return {
-            url: `${this.baseUrl}/latest-releases/page/${page}/`,
-        };
+        return { url: `${this.baseUrl}/latest-releases/page/${page}/` };
     }
     latestUpdatesSelector() {
         return ".page-item-detail.manga";
@@ -255,121 +191,60 @@ class MangaDistrictSource extends tachiyomi_1.TachiParsedHttpSource {
         return this.parseHighlight(el);
     }
     latestUpdatesNextPageSelector() {
-        // Same logic as search for consistency
-        return ".wp-pagenavi a.page.larger, .wp-pagenavi a[rel='next']";
+        return this.searchMangaNextPageSelector();
     }
     mangaDetailsRequest(slug) {
-        return {
-            url: `${this.baseUrl}/title/${slug}/`,
-        };
+        return { url: `${this.baseUrl}/title/${slug}/` };
     }
-    mangaDetailsParse(document) {
-        const $ = document;
-        // Title
+    mangaDetailsParse($) {
         const title = $("h1.h4").first().text().trim();
-        // Cover
-        const cover = $(".summary_image img").attr("src") ||
-            $("a > img.img-responsive[post-id]").attr("src") ||
-            "";
-        // Description/Summary
-        let summary = $(".summary__content").text().trim();
-        if (!summary) {
-            summary = $(".description-summary").text().trim();
-        }
-        // Status
-        let statusText = "";
-        $(".post-content_item .summary-heading").each((_, el) => {
-            if ($(el).text().toLowerCase().includes("status")) {
-                statusText = $(el).next(".summary-content").text().trim();
-            }
-        });
-        let publicationStatus;
-        switch (statusText.toLowerCase()) {
-            case "completed":
-                publicationStatus = daisuke_1.PublicationStatus.COMPLETED;
-                break;
-            case "ongoing":
-            case "on going":
-            case "onGoing":
-                publicationStatus = daisuke_1.PublicationStatus.ONGOING;
-                break;
-        }
-        // Authors
+        const cover = $(".summary_image img").attr("src") || $("a > img.img-responsive[post-id]").attr("src") || "";
+        let summary = $(".summary__content").text().trim() || $(".description-summary").text().trim();
+        let statusText = $(".post-content_item .summary-heading")
+            .filter((_, el) => $(el).text().toLowerCase().includes("status"))
+            .next(".summary-content")
+            .text()
+            .trim()
+            .toLowerCase();
+        let status = undefined;
+        if (statusText.includes("complete"))
+            status = daisuke_1.PublicationStatus.COMPLETED;
+        else if (statusText.includes("ongoing"))
+            status = daisuke_1.PublicationStatus.ONGOING;
         const authors = $(".author-content a")
             .toArray()
-            .map((el) => $(el).text().trim());
-        // Artists
+            .map(el => $(el).text().trim());
         const artists = $(".artist-content a")
             .toArray()
-            .map((el) => $(el).text().trim());
-        // Genres
+            .map(el => $(el).text().trim());
         const genres = $(".genres-content a")
             .toArray()
-            .map((el) => $(el).text().trim());
-        // Tags
+            .map(el => $(el).text().trim());
         const tags = $(".tags-content a")
             .toArray()
-            .map((el) => $(el).text().trim());
-        // Type
-        const type = $(".summary-heading:contains('Type')")
-            .next(".summary-content")
-            .text()
-            .trim();
-        // Release Year
-        const release = $(".summary-heading:contains('Release')")
-            .next(".summary-content")
-            .text()
-            .trim();
+            .map(el => $(el).text().trim());
+        const type = $(".summary-heading:contains('Type')").next(".summary-content").text().trim();
+        const release = $(".summary-heading:contains('Release')").next(".summary-content").text().trim();
         return {
             title,
             cover,
             summary,
-            status: publicationStatus,
-            authors,
-            artists,
-            genres,
-            tags,
-            type,
-            release,
-        }; // Remove 'as any' if your Content type supports these fields
-    }
-    chapterListRequest(slug) {
-        return {
-            url: `${this.baseUrl}/title/${slug}/`,
+            status,
         };
     }
-    async getMangaChapters(slug) {
-        const url = `${this.baseUrl}/title/${slug}/`;
+    async getPageList(_, chapter) {
+        const url = chapter.startsWith("http") ? chapter : `${this.baseUrl}${chapter.startsWith("/") ? "" : "/"}${chapter}`;
         const { data: html } = await this.client.get(url);
         const $ = (0, cheerio_1.load)(html);
-        // Use the robust selector here
-        return $("ul.main.version-chap li.wp-manga-chapter")
+        const pages = $(".reading-content .page-break > img.wp-manga-chapter-img")
             .toArray()
-            .map((el) => this.chapterFromElement($(el)));
-    }
-    async getPageList(slug, chapter) {
-        // Build the chapter URL
-        const url = `${chapter}/`;
-        const { data: html } = await this.client.get(url);
-        const $ = (0, cheerio_1.load)(html);
-        // Only select images that are direct children of .page-break inside .reading-content (jpg, jpeg, png only)
-        const images = [];
-        $(".reading-content .page-break > img.wp-manga-chapter-img").each((_, el) => {
-            const src = $(el).attr("src")?.trim();
-            // Only allow .jpg, .jpeg, .png (ignore .webp, .gif, etc)
-            if (src && /\.(jpe?g|png)$/i.test(src)) {
-                // Exclude images from /assets/publication/media/image/ (ads, covers, etc)
-                if (!/\/assets\/publication\/media\/image\//.test(src)) {
-                    // You can customize the numbers (e.g., 1, 0) as needed
-                    images.push([src, 1, 0]);
-                }
-            }
-        });
-        const pages = images.map((i) => ({ url: i[0] }));
+            .map(el => $(el).attr("src"))
+            .filter((src) => !!src && /\.(jpe?g|png)$/i.test(src) && !/\/assets\/publication\/media\/image\//.test(src))
+            .map(url => ({ url }));
         return { pages };
     }
-    pageListParse(_) {
-        throw new Error("not implemented");
+    pageListParse() {
+        throw new Error("Not implemented");
     }
     async getHomepage() {
         const lastUpdates = await this.latestUpdatesFetchAll();
