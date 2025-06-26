@@ -197,7 +197,7 @@ exports.info = {
     id: "mangafire_to",
     version: 0.2,
     website: exports.HOST_URL,
-    supportedLanguages: ["en"],
+    supportedLanguages: ["ja"],
     thumbnail: "mangafire.png",
     minSupportedAppVersion: "6.0.0",
 };
@@ -211,7 +211,7 @@ const MangaFirePreferenceHandler = {
                 builder.source.lang = lang;
             }
         };
-        const savedLang = (await ObjectStore.string("chapter_lang")) ?? "en";
+        const savedLang = (await ObjectStore.string("chapter_lang")) ?? "ja";
         updateLang(savedLang);
         return {
             sections: [
@@ -296,7 +296,7 @@ class MangaFireTemplate extends tachiyomi_1.TachiParsedHttpSource {
     supportsLatest = true;
     name = "MangaFire";
     baseUrl = "https://mangafire.to";
-    lang = "en";
+    lang = "ja";
     searchMangaSelector() {
         return ".original.card-lg .unit .inner";
     }
@@ -459,7 +459,7 @@ class MangaFireTemplate extends tachiyomi_1.TachiParsedHttpSource {
         const title = link.attr("title") ??
             (0, lodash_1.startCase)((0, lodash_1.toLower)(link.text().trim().replace(`Chap ${numberStr}: `, "").trim()));
         const chapterId = link.attr("href") + "#" + "chapter" + "/" + element.attr("data-id");
-        moment_1.default.locale("en");
+        moment_1.default.locale("ja");
         const dateStr = link.children().last().text() ?? "Jan 1, 1970";
         const dateParsed = (0, moment_1.default)(dateStr, "MMM DD, yyyy");
         const date = dateParsed.isValid() ? dateParsed.toDate() : new Date();
